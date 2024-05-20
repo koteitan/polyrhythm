@@ -1,4 +1,4 @@
-var version = "1.4";
+var version = "0.1";
 var isdebug = false;
 //entry point--------------------
 window.onload = function(){
@@ -6,30 +6,33 @@ window.onload = function(){
   initbyquery();
   initdraw();
   initgame();
+  initsound();
   window.onresize();
   setInterval(procAll, 1000/framerate); //enter gameloop
 }
 var initbyquery=function(){
   var urlsp = new URLSearchParams(window.location.search);
-  if(urlsp.has('ball')){
-    nball = parseInt(urlsp.get('ball')); //from query
-  }else{
-    nball = 2;
-  }
-  if(urlsp.has('size')){
-    maplen = parseInt(urlsp.get('size'))+2; //from query
-  }else{
-    maplen = 6+2; //default
-  }
-  if(urlsp.has('isdebug')){
-    isdebug = true;
+  if(urlsp.has('beats')){
+    //comma separated string to array
+    var str = urlsp.get('beats');
+    var arr = str.split(',');
+    parts = [];
+    for(var i=0;i<arr.length;i++){
+      //detect sqrt
+      if(arr[i].indexOf("sqrt")>=0){
+        var n = Number(arr[i].substring(4));
+        parts.push(new Part(Math.sqrt(n), "√"+n));
+      }else{
+        parts.push(new Part(Number(arr[i]), arr[i]));
+      }
+    }
   }
 }
 //game loop ------------------
 var gettime = function(){
   return (new Date()).getTime();
 }
-var framerate = 24; //[fps]
+var framerate = 60; //[fps]
 var t0=0;
 var t1=0;
 var t2=gettime();
@@ -53,222 +56,70 @@ var procAll=function(){
   }
 }
 //game -----------------
-var map;
-var ndim;
-var maplen;
-var blocklen;
-var nball;
-var Ball = function(_q, _v, _p){
-  this.q = _q;
-  this.v = _v;
-  this.p = _p;
+var pos = 0;
+var cycle = 3;
+var parts=[];
+var Part = function(nbeat, str){
+  this.nbeat = nbeat;
+  this.note = new Array(0);
+  var i=0;
+  var t=0;
+  do{
+    this.note[i]=t;
+    i++;
+    t+=1/nbeat;
+  }while(t<=1);
+  this.note[i]=t;
+  this.str = str;
 }
-Ball.prototype.toString=function(){
-  return "{q="+this.q.toString()+", v="+this.v.toString()+", p="+this.p+"}";
-}
-//initMap: make a empty map
 var initgame=function(){
-  //init map
-  ndim     = 4;
-  blocklen = 1/(maplen/2-1);
-  if(ndim!=4) throw("ndim must be 4.");
-  var count = [0,0];
-  map = new Array(maplen);
-  for(var w=0;w<maplen;w++){
-    map[w] = new Array(maplen);
-    for(var z=0;z<maplen;z++){
-      map[w][z] = new Array(maplen);
-      for(var y=0;y<maplen;y++){
-        map[w][z][y] = new Array(maplen);
-        for(var x=0;x<maplen;x++){
-          if(x==0 || x==maplen-1 ||
-             y==0 || y==maplen-1 ||
-             z==0 || z==maplen-1 ||
-             w==0 || w==maplen-1){
-            //wall
-            map[w][z][y][x]=0;
-          }else{
-            if(false){ //radius
-              var r2 =
-                ((x-1+1/2)/(maplen-2)*2-1)*((x-1+1/2)/(maplen-2)*2-1)+
-                ((y-1+1/2)/(maplen-2)*2-1)*((y-1+1/2)/(maplen-2)*2-1)+
-                ((z-1+1/2)/(maplen-2)*2-1)*((z-1+1/2)/(maplen-2)*2-1)+
-                ((w-1+1/2)/(maplen-2)*2-1)*((w-1+1/2)/(maplen-2)*2-1);
-              var r4 = r2*r2;
-              if(r4 < 0.5){ // in circle (tuning for 7x7x7x7)
-                map[w][z][y][x]=-1;
-                count[0]++;
-              }else{
-                map[w][z][y][x]=+1;
-                count[1]++;
-              }
-            }else{ //rectangle
-              if(z>(maplen-2)/2){
-                map[w][z][y][x]=-1;
-              }else{
-                map[w][z][y][x]=+1;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  //init ball
-  initv = [0.005, 0.005, 0.05, 0.05];
-  ball = new Array(nball);
-  for(var b=0;b<nball;b++){
-    var p;
-    if(b==0){
-      p = -1;
-    }else if(b==1){
-      p = +1;
-    }else{
-      p = (Math.random() < 0.5)?-1:+1;
-    }
-    //init q
-    var q=new Array(ndim);
-    var m;
-    do{
-      for(var d=0;d<ndim;d++){
-        var x = Math.random()*2-1;
-        q[d] = x;
-      }
-      //q=[0,0,0,0];
-      //q=[0,0,1/((maplen-2)/2),0];
-      m = q2map(q);
-    }while(m!=p);
-    var iq = q2iq(q);
-    //console.log("ball("+b+"):m="+m+", p="+p);
-    //console.log("iq="+iq.toString());
-    //init v
-    var v=new Array(ndim);
-    do{
-      var v2 = 0;
-      for(var d=0;d<ndim;d++){
-        v[d] = Math.random()*2-1;
-        v2  += v[d]*v[d];
-      }
-      var av = Math.sqrt(v2);
-      var limit = blocklen*framerate/100;
-      var isover = false;
-      for(var d=0;d<ndim;d++){
-        v[d] = v[d] / av * initv[d];
-        if(v[d]<limit*initv[d]){
-          isover = true;
-          break;
-        }
-      }
-    }while(isover);
-
-    //resister
-    if(v[2]<v[3]){ // if v_z < v_w
-      //swap z and w
-      var tmp=v[3];
-      v[3]   =v[2];
-      v[2]   =tmp;
-    }
-    ball[b] = new Ball(q, v, p);
+  var notes;
+  if(parts.length==0){
+    parts.push(new Part(3, "3"));
+    parts.push(new Part(Math.sqrt(23), "√23"));
   }
 }
-var q2map=function(q){
-  var iq = q2iq(q);
-  try{
-    if(ndim!=4) throw("ndim must be 4.");
-    return map[iq[3]][iq[2]][iq[1]][iq[0]];
-  }catch(e){
-    throw(e);
-  }
-}
-var q2iq=function(q){
-  var ndim=q.length;
-  var iq=new Array(ndim);
-  for(var d=0;d<ndim;d++){
-    iq[d] = Math.floor((q[d]+1)/2*(maplen-2)+1);
-  }
-  return iq;
-}
+var isgamestart = false;
+var ispause = false;
 var procgame=function(){
-  //renew q----------------------------
-  //check all the collisions of all the ball and all the dimensions
-  var lefttime = 1;
-  while(lefttime > 0){
-    cq1 = new Array(nball);
-    ct  = new Array(nball); // collision time of ball b and d-th-dimensional wall
-    for(var b=0;b<nball;b++){
-      cq1[b] = new Array(ndim);
-      ct [b] = new Array(ndim);
-      var p = ball[b].p;
-      for(var d=0;d<ndim;d++){
-        var v  = ball[b].v[d];
-        var q0 = ball[b].q.clone();
-        var q1 = ball[b].q.clone();
-        q1[d] = q0[d] + v*lefttime;
-        var rq0_d = (q0[d]+1)/2*(maplen-2);
-        var rq1_d = (q1[d]+1)/2*(maplen-2);
-        var iq0_d = Math.floor(rq0_d);
-        var iq1_d = Math.floor(rq1_d);
-        if(iq0_d != iq1_d && q2map(q1)!=p){ /* cross block border && oppo */
-          if(v>0){
-            ct [b][d]=(iq1_d-rq0_d)/(rq1_d-rq0_d);
-          }else{
-            ct [b][d]=(iq0_d-rq1_d)/(rq0_d-rq1_d);
-          }
-          cq1[b][d]=q1;
-        }else{
-          ct[b][d]=+Infinity; //no collision
+  if(isgamestart && !ispause){
+    pos += 1/framerate/cycle;
+    for(var p=0;p<parts.length;p++){
+      var part = parts[p];
+      for(var i=0;i<part.note.length-1;i++){
+        if(pos>=part.note[i]+1/part.nbeat){
+          // remove note
+          part.note.splice(i,1);
+          // add new note
+          part.note.push(part.note[part.note.length-1]+1/part.nbeat);
+          // sound
+          playsound(p);
         }
       }
     }
-    // find the first collision
-    var minb=0; // the first ball
-    var mind=0; // the first dimension
-    var minct=ct[0][0];
-    for(var b=0;b<nball;b++){
-      for(var d=0;d<ndim;d++){
-        if(ct[b][d]<minct){
-          minb=b;
-          mind=d;
-          minct=ct[b][d];
-        }
-      }
+  }
+}
+var initsound = function(){
+  audioctx = new (window.AudioContext || window.webkitAudioContext)();
+  document.getElementById("outcanvas").addEventListener("click", function(){
+    if(!isgamestart){
+      audioctx.resume().then(function(){
+        isgamestart = true;
+      });
+    }else{
+      ispause = !ispause;
     }
-    if(isdebug)if(minct!=Infinity)console.log("minct="+minct);
-    if(minct==Infinity){ //there is no collision
-      for(var b=0;b<nball;b++){
-        for(var d=0;d<ndim;d++){
-          ball[b].q[d] += ball[b].v[d]*lefttime; //use left time all
-        }
-        if(isdebug)console.log("ball["+b+"]="+ball[b].toString());
-      }
-      lefttime = 0;
-      break;
-    }else{ // there is a collision
-      
-      for(var b=0;b<nball;b++){
-        for(var d=0;d<ndim;d++){
-          var dq = ball[b].v[d]*minct;
-          if(b==minb && d==mind) dq *= 0.999; //avoid online
-          ball[b].q[d] += dq; //use minct
-          if(ball[b].q[d] >= +1){ ball[b].q[d] = +1; }
-          if(ball[b].q[d] <= -1){ ball[b].q[d] = -1; }
-        }
-        if(isdebug)console.log("ball["+b+"]="+ball[b].toString());
-      }
-
-      //reflect
-      ball[minb].v[mind] *= -1; 
-
-      //change
-      var iq1 = q2iq(cq1[minb][mind]);
-      if(map[iq1[3]][iq1[2]][iq1[1]][iq1[0]] != 0){
-        map[iq1[3]][iq1[2]][iq1[1]][iq1[0]] = ball[minb].p;
-      }
-      lefttime -= minct;
-    }
-  }//while(lefttime > 0)
-
+  });
+}
+var playsound = function(p){
+  var part = parts[p];
+  var freq = 440*Math.pow(2,p*5/12);
+  var osc = audioctx.createOscillator();
+  osc.type = "sine";
+  osc.frequency.value = freq;
+  osc.connect(audioctx.destination);
+  osc.start();
+  osc.stop(audioctx.currentTime+0.25/part.nbeat);
 }
 // debugout ------------------------
 var isdebugout = false; // false for release
@@ -282,57 +133,7 @@ var debug;
 var ctx;
 var can;
 var canlen;
-var margin = 10;
-var maplen;
 var reqdraw = true;
-/* map2color(-1 or +1) returns color of map */
-var map2color  = function(m){
-  return ['#FF6666','#66FF66'][(m+1)/2];
-}
-/* map2color(-1 or +1) returns color of ball */
-var ball2color = function(b){
-  return map2color(-ball[b].p);
-}
-var Conv=function(){
-  this.spm        = canlen/(maplen-2);
-  this.spm2       = canlen/(maplen-2)/(maplen-2);
-  this.invmaplen  =      1/(maplen-2);
-};
-/* sq[dz][dw][0,1,2] = q2sq(q[d])
- * d = {0,1,2,3} = {x,y,z,w} axis
- * sq[dz][dw][0] = screen position x  
- * sq[dz][dw][1] = screen position y
- * sq[dz][dw][2] = radius weight */
-Conv.prototype.q2sq=function(q){
-  [x,y,z,w] = q;
-  var sw = (w+1)/2*(maplen-2)-0.5;
-  var iw = Math.floor(sw);
-  var ww0 = Math.sqrt(1-(sw-iw));
-  var ww1 = Math.sqrt(1-ww0);
-  var sz = (z+1)/2*(maplen-2)-0.5;
-  var iz = Math.floor(sz);
-  var wz0 = Math.sqrt(1-(sz-iz));
-  var wz1 = Math.sqrt(1-wz0);
-  var sx0 = Math.floor((iz  +(x+1)/2)*this.spm);
-  var sy0 = Math.floor((iw  +(y+1)/2)*this.spm);
-  var sx1 = Math.floor((iz+1+(x+1)/2)*this.spm);
-  var sy1 = Math.floor((iw+1+(y+1)/2)*this.spm);
-  return [
-  /*dw\dz:               0 ,                 1 */
-  /*0*/[[sx0, sy0, wz0*ww0],[sx1, sy0, wz1*ww0]],
-  /*0*/[[sx0, sy1, wz0*ww1],[sx1, sy1, wz1*ww1]],
-  ];
-}
-/* [sx0, sy0, sx1, sy1] = conv.iq2sq(iq[d]) 
- *  iq[d]     = d-th-dimensional index d={0,1,2,3}={x,y,z,w} */
-Conv.prototype.iq2sq=function(iq){
-  [ix,iy,iz,iw] = iq;
-  var sx0 = Math.floor(((iz-1)+(ix-1)*this.invmaplen)*this.spm);
-  var sy0 = Math.floor(((iw-1)+(iy-1)*this.invmaplen)*this.spm);
-  var sx1 = Math.floor(sx0 + this.spm2);
-  var sy1 = Math.floor(sy0 + this.spm2);
-  return [sx0,sy0,sx1,sy1];
-}
 //init
 var initdraw=function(){
   can = document.getElementById("outcanvas");
@@ -340,53 +141,56 @@ var initdraw=function(){
 }
 //proc
 var procdraw = function(){
-
-  //background
-  ctx.fillStyle  ="white";
+  //polygon
+  ctx.fillStyle  ="black";
   ctx.fillRect  (0,0,can.width, can.height);
+  for(var p=0;p<parts.length;p++){
+    var part = parts[p];
+    var note = part.note;
+    var str = part.str;
+    var py = can.height/2;
+    var px = can.width/parts.length*(p+0.5);
+    var pw = can.width/parts.length*0.5;
+    var pr = can.width/parts.length*0.3;
+    ctx.strokeStyle = "white";
+    for(var i=0;i<note.length-1;i++){
+      var x0 = px+pr*Math.cos(2*Math.PI*note[i  ]-Math.PI/2);
+      var y0 = py+pr*Math.sin(2*Math.PI*note[i  ]-Math.PI/2);
+      var x1 = px+pr*Math.cos(2*Math.PI*note[i+1]-Math.PI/2);
+      var y1 = py+pr*Math.sin(2*Math.PI*note[i+1]-Math.PI/2);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+    }
+    //text
+    ctx.fillStyle = "white";
+    ctx.font = "40px 'Arial'";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(str, px, py);
+    //pos on the edge of polygon
+    var ppos  = pos;
+    var ipos0 =  Math.floor(pos*part.nbeat)   /part.nbeat;
+    var ipos1 = (Math.floor(pos*part.nbeat)+1)/part.nbeat;
+    var fpos  = ppos*part.nbeat-ipos0*part.nbeat;
+    var x0 = px+pr*Math.cos(2*Math.PI*ipos0-Math.PI/2);
+    var y0 = py+pr*Math.sin(2*Math.PI*ipos0-Math.PI/2);
+    var x1 = px+pr*Math.cos(2*Math.PI*ipos1-Math.PI/2);
+    var y1 = py+pr*Math.sin(2*Math.PI*ipos1-Math.PI/2);
+    var x = x0*(1-fpos)+x1*fpos;
+    var y = y0*(1-fpos)+y1*fpos;
+    var rx = px+pr*Math.cos(2*Math.PI*ppos-Math.PI/2);
+    var ry = py+pr*Math.sin(2*Math.PI*ppos-Math.PI/2);
+    ctx.fillStyle = "white";
+    ctx.beginPath();
+    ctx.arc(x, y, 10, 0, Math.PI*2, false);
+    ctx.fill();
 
-  //block
-  var conv=new Conv();
-  blocksize0 = Math.ceil(canlen/((maplen-2)*(maplen-2)));
-  blocksize1 = Math.ceil(canlen/(maplen-2));
-  for(var w=1;w<maplen-1;w++){
-    for(var z=1;z<maplen-1;z++){
-      for(var y=1;y<maplen-1;y++){
-        for(var x=1;x<maplen-1;x++){
-          var m  = map[w][z][y][x];
-          var sq = conv.iq2sq([x,y,z,w]);
-          ctx.fillStyle = map2color(m);
-          ctx.fillRect(sq[0],sq[1],blocksize0, blocksize0);
-        }
-      }
-    }
-  }
-  for(var w=1;w<maplen-1;w++){
-    for(var z=1;z<maplen-1;z++){
-      ctx.strokeStyle = "#FFFFFF";
-      var sq = conv.iq2sq([1,1,z,w]);
-      ctx.strokeRect(sq[0],sq[1],blocksize1, blocksize1);
-    }
-  }
-  //ball
-  var ball_radius = 16;
-  for(var b=0;b<nball;b++){
-    var sq = conv.q2sq(ball[b].q);
-    //console.log("sq="+sq.toString());
-    for(var dw=0;dw<2;dw++){
-      for(var dz=0;dz<2;dz++){
-        ctx.beginPath();
-        ctx.fillStyle = ball2color(b);
-        ctx.arc(sq[dw][dz][0], sq[dw][dz][1], ball_radius*sq[dw][dz][2], 0, Math.PI*2, false);
-        ctx.fill();
-        if(true){
-          ctx.beginPath();
-          ctx.strokeStyle = "#333333";
-          ctx.arc(sq[dw][dz][0], sq[dw][dz][1], ball_radius*sq[dw][dz][2], 0, Math.PI*2, false);
-          ctx.stroke();
-        }
-      }
-    }
+    //ctx.fillStyle = "blue";
+    //ctx.beginPath();
+    //ctx.arc(rx, ry, 10, 0, Math.PI*2, false);
+    //ctx.fill();
   }
 }
 window.onresize = function(){ //browser resize
